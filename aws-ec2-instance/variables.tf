@@ -1,11 +1,6 @@
 variable "aws_region" {
   description = "AWS region"
-  default = "us-east-1"
-}
-
-variable "ami_id" {
-  description = "ID of the AMI to provision."
-  default = "ami-0d4b9bb1917cb09c8"
+  default = "us-west-2"
 }
 
 variable "instance_type" {
@@ -14,6 +9,6 @@ variable "instance_type" {
 }
 
 variable "name" {
-  description = "name to pass to Name tag"
-  default = "Provisioned by Terraform"
+  description = "Name tag"
+  default = "tfe-aws-demo"
 }
