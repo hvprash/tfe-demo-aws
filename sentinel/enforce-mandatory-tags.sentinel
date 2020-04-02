@@ -1,10 +1,13 @@
-# This policy uses the Sentinel tfplan import to require that
-# all EC2 instances have instance types from an allowed list
+# This policy uses the Sentinel tfplan import to require that all EC2 instances
+# have all mandatory tags.
+
+# Note that the comparison is case-sensitive since AWS tags are case-sensitive.
 
 ##### Imports #####
 
 import "tfplan"
 import "strings"
+import "types"
 
 ##### Functions #####
 
@@ -39,9 +42,9 @@ find_resources_from_plan = func(type) {
   return resources
 }
 
-# Validate that all instances of a specified resource type being modified have
-# a specified top-level attribute in a given list
-validate_attribute_in_list = func(type, attribute, allowed_values) {
+# Validate that all instances of specified type have a specified top-level
+# attribute that contains all members of a given list
+validate_attribute_contains_list = func(type, attribute, required_values) {
 
   validated = true
 
@@ -60,43 +63,58 @@ validate_attribute_in_list = func(type, attribute, allowed_values) {
     }
 
     # Determine if the attribute is computed
-    if r.diff[attribute].computed else false is true {
+    # We check "attribute.%" and "attribute.#" because an
+    # attribute of type map or list won't show up in the diff
+    if (r.diff[attribute + ".%"].computed else false) or
+       (r.diff[attribute + ".#"].computed else false) {
       print("Resource", address, "has attribute", attribute,
             "that is computed.")
       # If you want computed values to cause the policy to fail,
       # uncomment the next line.
       # validated = false
     } else {
-      # Validate that each instance has allowed value
-      if r.applied[attribute] else "" not in allowed_values {
-        print("Resource", address, "has attribute", attribute, "with value",
-              r.applied[attribute] else "",
-              "that is not in the allowed list:", allowed_values)
-        validated = false
-      }
-    }
+      # Validate that the attribute is a list or a map
+      # but first check if r.applied[attribute] exists
+      if r.applied[attribute] else null is not null and
+         (types.type_of(r.applied[attribute]) is "list" or
+          types.type_of(r.applied[attribute]) is "map") {
 
-  }
+        # Evaluate each member of required_values list
+        for required_values as rv {
+          if r.applied[attribute] not contains rv {
+            print("Resource", address, "has attribute", attribute,
+                  "that is missing required value", rv, "from the list:",
+                  required_values)
+            validated = false
+          } // end rv
+        } // end required_values
+
+      } else {
+        print("Resource", address, "is missing attribute", attribute,
+              "or it is not a list or a map")
+        validated = false
+      } // end check that attribute is list or map
+
+    } // end computed check
+  } // end resource instances
+
   return validated
 }
 
-##### Lists #####
-
-# Allowed EC2 Instance Types
-# We don't include t2.nano or t2.micro to illustrate overriding failed policy
-allowed_types = [
-  "t2.small",
-  "t2.medium",
-  "t2.large",
+### List of mandatory tags ###
+mandatory_tags = [
+  "Name",
+  "ttl",
+  "owner",
 ]
 
-##### Rules #####
+### Rules ###
 
 # Call the validation function
-instances_validated = validate_attribute_in_list("aws_instance",
-                      "instance_type", allowed_types)
+tags_validated = validate_attribute_contains_list("aws_instance",
+                 "tags", mandatory_tags)
 
-# Main rule
+#Main rule
 main = rule {
-  instances_validated
+  tags_validated
 }
